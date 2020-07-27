@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
 
 project(Molding)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 find_package(VTK COMPONENTS
   vtkCommonCore
   vtkCommonDataModel
