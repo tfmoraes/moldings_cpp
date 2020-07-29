@@ -15,6 +15,7 @@ find_package(VTK COMPONENTS
   vtkCommonDataModel
   vtkIOGeometry
   vtkIOPLY
+  vtkIOXML
   vtkFiltersCore
   vtkFiltersExtraction
   vtkFiltersGeneral
