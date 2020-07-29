@@ -14,7 +14,6 @@
 #include <vtkGenericCell.h>
 #include <vtkIdList.h>
 #include <vtkIdTypeArray.h>
-#include <vtkCellData.h>
 #include <vtkPLYReader.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataNormals.h>
@@ -234,11 +233,11 @@ int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
     plane.normals[2] /= plane.area;
 
     if (
-        (plane.center[0] != old_plane.center[0]) &&
-        (plane.center[1] != old_plane.center[1]) &&
-        (plane.center[2] != old_plane.center[2]) &&
-        (plane.normals[0] != old_plane.normals[0]) &&
-        (plane.normals[1] != old_plane.normals[1]) &&
+        (plane.center[0] != old_plane.center[0]) ||
+        (plane.center[1] != old_plane.center[1]) ||
+        (plane.center[2] != old_plane.center[2]) ||
+        (plane.normals[0] != old_plane.normals[0]) ||
+        (plane.normals[1] != old_plane.normals[1]) ||
         (plane.normals[2] != old_plane.normals[2])) {
       updated = 1;
     }
@@ -253,9 +252,10 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells, std::vector<Plane> &plan
   int step = 0;
   int sub_step = 0;
   do {
+      sub_step = 0;
     do {
-        std::cout << "step:" << step << "." << sub_step << std::endl;
-        modified = 0;
+      std::cout << "step:" << step << "." << sub_step << std::endl;
+      modified = 0;
       for (int p0 = 0; p0 < planes.size(); p0++) {
         for (int p1 = 0; p1 < planes.size(); p1++) {
           if (p0 == p1) {
@@ -271,6 +271,7 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells, std::vector<Plane> &plan
               if (cell_neighbour.plane == p1) {
                 planes[p1].cells.remove(j);
                 planes[p0].cells.push_back(j);
+                cell_neighbour.plane = p0;
                 new_energy = calc_energy(G, cells, planes, {p0, p1});
                 if (new_energy < energy) {
                   energy = new_energy;
@@ -278,6 +279,7 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells, std::vector<Plane> &plan
                 } else {
                   planes[p1].cells.push_back(j);
                   planes[p0].cells.pop_back();
+                  cell_neighbour.plane = p1;
                 }
               }
             }
@@ -288,7 +290,7 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells, std::vector<Plane> &plan
     } while (modified);
     updated = update_planes(planes, cells);
     step++;
-  } while (updated);
+  } while (sub_step > 1);
 }
 
 vtkSmartPointer<vtkPolyData> gen_output_polydata(vtkSmartPointer<vtkPolyData> polydata, std::vector<Cell> cells) {
@@ -312,8 +314,10 @@ vtkSmartPointer<vtkPolyData> gen_output_polydata(vtkSmartPointer<vtkPolyData> po
   return output_polydata;
 }
 
-void update_polydata(vtkSmartPointer<vtkPolyData> polydata, std::vector<Cell> cells){
-  auto color_array2 = dynamic_cast<vtkIdTypeArray *>(polydata->GetCellData()->GetArray("RegionID2"));
+void update_polydata(vtkSmartPointer<vtkPolyData> polydata, std::vector<Cell> cells) {
+  std::cout << "Updating polydata";
+  vtkIdTypeArray* color_array2 = dynamic_cast<vtkIdTypeArray *>(polydata->GetCellData()->GetArray("RegionID2"));
+  std::cout << "Size regionid2  " <<  color_array2->GetNumberOfValues() << std::endl;
   for (auto &cell : cells) {
     color_array2->SetValue(cell.id, cell.plane);
   }
@@ -369,6 +373,7 @@ int main(int argc, char *argv[]) {
   update_planes(planes, cells);
   auto output_polydata = gen_output_polydata(polydata, cells);
   swap_optimize(G, cells, planes);
+  update_polydata(output_polydata, cells);
 
   std::cout << cells.size() << std::endl;
   std::cout << polydata << std::endl;
