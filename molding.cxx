@@ -34,6 +34,14 @@ struct Cell {
   double area;
   std::array<double, 3> center;
   std::array<double, 3> normals;
+  friend std::ostream &operator<<(std::ostream &os, Cell const &a) {
+    return os << "Cell: " << a.id << '\n'
+              << "\tArea: " << a.area << '\n'
+              << "\tCenter: {" << a.center[0] << ", " << a.center[1] << ", "
+              << a.center[2] << "}\n"
+              << "\tNormals: {" << a.normals[0] << ", " << a.normals[1] << ", "
+              << a.normals[2] << "}\n";
+  }
 };
 
 struct Plane {
@@ -42,6 +50,15 @@ struct Plane {
   std::array<double, 3> center;
   std::array<double, 3> normals;
   std::list<int> cells;
+
+  friend std::ostream &operator<<(std::ostream &os, Plane const &a) {
+    return os << "Plane: " << a.id << '\n'
+              << "\tArea: " << a.area << '\n'
+              << "\tCenter: {" << a.center[0] << ", " << a.center[1] << ", "
+              << a.center[2] << "}\n"
+              << "\tNormals: {" << a.normals[0] << ", " << a.normals[1] << ", "
+              << a.normals[2] << "}\n";
+  }
 };
 
 // https://stackoverflow.com/questions/874134/find-out-if-string-ends-with-another-string-in-c
@@ -149,7 +166,7 @@ void init_labeling(vtkSmartPointer<vtkPolyData> polydata,
   int cell_id;
   for (int i = 0; i < number_planes; i++) {
     seed = distribution(rgen);
-    planes.push_back(Plane{});
+    planes.push_back(Plane{i});
     stack.push_back(seed);
     cells[seed].plane = i;
   }
@@ -171,6 +188,13 @@ double calc_manhathan_distance(std::array<double, 3> v0,
                                std::array<double, 3> v1) {
   return std::fabs(v0[0] - v1[0]) + std::fabs(v0[1] - v1[1]) +
          std::fabs(v0[2] - v1[2]);
+}
+
+double calc_euclidean_distance(std::array<double, 3> &v0,
+                               std::array<double, 3> &v1) {
+  return std::sqrt((v0[0] - v1[0]) * (v0[0] - v1[0]) +
+                   (v0[1] - v1[1]) * (v0[1] - v1[1]) +
+                   (v0[2] - v1[2]) * (v0[2] - v1[2]));
 }
 
 std::array<double, 3> arr_diff(std::array<double, 3> v0,
@@ -214,6 +238,14 @@ double calc_energy(G_type &G, std::vector<Cell> &cells,
   return energy;
 }
 
+inline void normalize(std::array<double, 3> &vec) {
+  double norm;
+  norm = sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+  vec[0] /= norm;
+  vec[1] /= norm;
+  vec[2] /= norm;
+}
+
 int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
   std::vector old_planes = planes;
   int updated = 0;
@@ -240,6 +272,7 @@ int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
 
   for (auto &plane : planes) {
     auto &old_plane = old_planes[plane.id];
+    double norm;
     plane.center[0] /= plane.area;
     plane.center[1] /= plane.area;
     plane.center[2] /= plane.area;
@@ -247,6 +280,10 @@ int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
     plane.normals[0] /= plane.area;
     plane.normals[1] /= plane.area;
     plane.normals[2] /= plane.area;
+    normalize(plane.normals);
+
+    std::cout << plane << std::endl;
+    std::cout << old_plane << std::endl;
 
     if ((plane.center[0] != old_plane.center[0]) ||
         (plane.center[1] != old_plane.center[1]) ||
@@ -254,7 +291,9 @@ int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
         (plane.normals[0] != old_plane.normals[0]) ||
         (plane.normals[1] != old_plane.normals[1]) ||
         (plane.normals[2] != old_plane.normals[2])) {
-      updated = 1;
+        if (plane.area > 0){
+          updated = 1;
+        }
     }
   }
   return updated;
@@ -305,8 +344,9 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells,
       sub_step++;
     } while (modified);
     updated = update_planes(planes, cells);
+    std::cout << "Updated? " << updated << std::endl;
     step++;
-  } while (sub_step > 1);
+  } while (updated);
 }
 
 vtkSmartPointer<vtkPolyData>
