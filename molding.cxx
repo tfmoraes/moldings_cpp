@@ -25,7 +25,7 @@
 
 using G_type = std::vector<std::vector<int>>;
 
-const int WN = 10;
+const double WN = 10;
 const double WV = 0.05;
 
 struct Cell {
@@ -66,6 +66,14 @@ inline bool ends_with(std::string const &value, std::string const &ending) {
   if (ending.size() > value.size())
     return false;
   return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+}
+
+inline void normalize(std::array<double, 3> &vec) {
+  double norm;
+  norm = sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+  vec[0] /= norm;
+  vec[1] /= norm;
+  vec[2] /= norm;
 }
 
 int get_cell_edge_neighbours(vtkSmartPointer<vtkPolyData> polydata, int cell_id,
@@ -144,13 +152,26 @@ double calc_cell_area(vtkSmartPointer<vtkPolyData> polydata, int cell_id) {
 void populate_cells(vtkSmartPointer<vtkPolyData> polydata,
                     std::vector<Cell> &cells) {
   auto normals = polydata->GetCellData()->GetArray("Normals");
+  auto bounds = polydata->GetBounds();
+  double sx, sy, sz, min_x, min_y, min_z, max_s;
+  sx = bounds[1] - bounds[0];
+  sy = bounds[3] - bounds[2];
+  sz = bounds[5] - bounds[4];
+  min_x = bounds[0];
+  min_y = bounds[2];
+  min_z = bounds[4];
+  max_s = std::max({sx, sy, sz});
   cells.reserve(polydata->GetNumberOfCells());
   for (int cell_id = 0; cell_id < polydata->GetNumberOfCells(); cell_id++) {
     double area = calc_cell_area(polydata, cell_id);
     auto normal = normals->GetTuple(cell_id);
     auto center = calc_cell_center(polydata, cell_id);
-    cells.push_back(
-        Cell{cell_id, -1, area, center, {normal[0], normal[1], normal[2]}});
+    center[0] = (center[0] - min_x) / max_s;
+    center[1] = (center[1] - min_y) / max_s;
+    center[2] = (center[2] - min_z) / max_s;
+    auto cell = Cell{cell_id, -1, area, center, {normal[0], normal[1], normal[2]}};
+    normalize(cell.normals);
+    cells.push_back(cell);
   }
 }
 
@@ -217,7 +238,7 @@ double calc_energy(G_type &G, std::vector<Cell> &cells,
       auto &cell = cells[cell_id];
       dp += (cell.area *
              (calc_manhathan_distance(plane.normals, cell.normals) +
-              WN * dot(arr_diff(plane.center, cell.center), plane.normals)));
+              WN * std::fabs(dot(arr_diff(cell.center, plane.center), plane.normals))));
       for (auto j : G[cell_id]) {
         auto &cell_neighbour = cells[j];
         if (cell.plane == cell_neighbour.plane) {
@@ -228,6 +249,7 @@ double calc_energy(G_type &G, std::vector<Cell> &cells,
               vpq += (((cell.area + cell_neighbour.area) / 2.0) *
                       (4 - calc_manhathan_distance(cell.normals,
                                                    cell_neighbour.normals)));
+              break;
             }
           }
         }
@@ -238,13 +260,6 @@ double calc_energy(G_type &G, std::vector<Cell> &cells,
   return energy;
 }
 
-inline void normalize(std::array<double, 3> &vec) {
-  double norm;
-  norm = sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
-  vec[0] /= norm;
-  vec[1] /= norm;
-  vec[2] /= norm;
-}
 
 int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
   std::vector old_planes = planes;
@@ -291,9 +306,9 @@ int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
         (plane.normals[0] != old_plane.normals[0]) ||
         (plane.normals[1] != old_plane.normals[1]) ||
         (plane.normals[2] != old_plane.normals[2])) {
-        if (plane.area > 0){
-          updated = 1;
-        }
+      if (plane.area > 0) {
+        updated = 1;
+      }
     }
   }
   return updated;
@@ -318,7 +333,7 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells,
           }
           energy = calc_energy(G, cells, planes, {p0, p1});
           auto plane_0 = planes[p0];
-          auto plane_1 = planes[p1];
+          // auto plane_1 = planes[p1];
           for (auto cell_id : plane_0.cells) {
             auto &cell = cells[cell_id];
             for (auto j : G[cell_id]) {
