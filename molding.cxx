@@ -169,7 +169,8 @@ void populate_cells(vtkSmartPointer<vtkPolyData> polydata,
     center[0] = (center[0] - min_x) / max_s;
     center[1] = (center[1] - min_y) / max_s;
     center[2] = (center[2] - min_z) / max_s;
-    auto cell = Cell{cell_id, -1, area, center, {normal[0], normal[1], normal[2]}};
+    auto cell =
+        Cell{cell_id, -1, area, center, {normal[0], normal[1], normal[2]}};
     normalize(cell.normals);
     cells.push_back(cell);
   }
@@ -236,9 +237,10 @@ double calc_energy(G_type &G, std::vector<Cell> &cells,
     auto &plane = planes[plane_id];
     for (auto cell_id : plane.cells) {
       auto &cell = cells[cell_id];
-      dp += (cell.area *
-             (calc_manhathan_distance(plane.normals, cell.normals) +
-              WN * std::fabs(dot(arr_diff(cell.center, plane.center), plane.normals))));
+      dp +=
+          (cell.area * (calc_euclidean_distance(plane.normals, cell.normals) +
+                        WN * std::fabs(dot(arr_diff(cell.center, plane.center),
+                                           plane.normals))));
       for (auto j : G[cell_id]) {
         auto &cell_neighbour = cells[j];
         if (cell.plane == cell_neighbour.plane) {
@@ -247,7 +249,7 @@ double calc_energy(G_type &G, std::vector<Cell> &cells,
           for (auto p : plane_ids) {
             if (cell_neighbour.plane == p) {
               vpq += (((cell.area + cell_neighbour.area) / 2.0) *
-                      (4 - calc_manhathan_distance(cell.normals,
+                      (4 - calc_euclidean_distance(cell.normals,
                                                    cell_neighbour.normals)));
               break;
             }
@@ -259,7 +261,6 @@ double calc_energy(G_type &G, std::vector<Cell> &cells,
   energy = dp + WV * vpq;
   return energy;
 }
-
 
 int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
   std::vector old_planes = planes;
