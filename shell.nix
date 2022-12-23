@@ -2,7 +2,7 @@
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    vtk
+    vtk_9
     cmake
   ];
 }

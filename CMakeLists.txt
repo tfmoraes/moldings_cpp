@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
 
 project(Molding)
 
@@ -11,19 +11,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 
 find_package(VTK COMPONENTS
-  vtkCommonCore
-  vtkCommonDataModel
-  vtkIOGeometry
-  vtkIOPLY
-  vtkIOXML
-  vtkFiltersCore
-  vtkFiltersExtraction
-  vtkFiltersGeneral
-  vtkFiltersSources
-  vtkInteractionStyle
-  vtkRenderingCore
-  vtkRenderingFreeType
-  vtkRenderingOpenGL2 QUIET)
+  CommonCore
+  CommonDataModel
+  IOGeometry
+  IOPLY
+  IOXML
+  FiltersCore
+  FiltersExtraction
+  FiltersGeneral
+  FiltersSources
+  InteractionStyle
+  RenderingCore
+  RenderingFreeType
+  RenderingOpenGL2
+  RenderingGL2PSOpenGL2
+  QUIET)
 if (NOT VTK_FOUND)
     message("Skipping Molding: ${VTK_NOT_FOUND_MESSAGE}")
   return ()

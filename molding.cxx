@@ -30,7 +30,7 @@ const double WV = 0.05;
 
 struct Cell {
   int id;
-  int plane;
+  int plane_id;
   double area;
   std::array<double, 3> center;
   std::array<double, 3> normals;
@@ -124,8 +124,8 @@ void build_cell_connectivity_graph(vtkSmartPointer<vtkPolyData> polydata,
   }
 }
 
-std::array<double, 3> calc_cell_center(vtkSmartPointer<vtkPolyData> polydata,
-                                       int cell_id) {
+std::array<double, 3>
+calc_cell_center(const vtkSmartPointer<vtkPolyData> polydata, int cell_id) {
   auto points = vtkSmartPointer<vtkIdList>::New();
   polydata->GetCellPoints(cell_id, points);
   std::array<double, 3> center = {0, 0, 0};
@@ -143,13 +143,15 @@ std::array<double, 3> calc_cell_center(vtkSmartPointer<vtkPolyData> polydata,
   return center;
 }
 
-double calc_cell_area(vtkSmartPointer<vtkPolyData> polydata, int cell_id) {
-  vtkCell *cell = polydata->GetCell(cell_id);
-  vtkTriangle *triangle = dynamic_cast<vtkTriangle *>(cell);
+double calc_cell_area(const vtkSmartPointer<vtkPolyData> polydata,
+                      int cell_id) {
+  vtkSmartPointer<vtkCell> cell = polydata->GetCell(cell_id);
+  vtkSmartPointer<vtkTriangle> triangle =
+      dynamic_cast<vtkTriangle *>(cell.Get());
   return triangle->ComputeArea();
 }
 
-void populate_cells(vtkSmartPointer<vtkPolyData> polydata,
+void populate_cells(const vtkSmartPointer<vtkPolyData> polydata,
                     std::vector<Cell> &cells) {
   auto normals = polydata->GetCellData()->GetArray("Normals");
   auto bounds = polydata->GetBounds();
@@ -176,9 +178,9 @@ void populate_cells(vtkSmartPointer<vtkPolyData> polydata,
   }
 }
 
-void init_labeling(vtkSmartPointer<vtkPolyData> polydata,
+void init_labeling(const vtkSmartPointer<vtkPolyData> polydata,
                    std::vector<Cell> &cells, std::vector<Plane> &planes,
-                   G_type G, int number_planes) {
+                   G_type &G, int number_planes) {
   std::random_device rdev;
   std::mt19937 rgen(rdev());
   std::uniform_int_distribution<size_t> distribution(
@@ -190,7 +192,7 @@ void init_labeling(vtkSmartPointer<vtkPolyData> polydata,
     seed = distribution(rgen);
     planes.push_back(Plane{i});
     stack.push_back(seed);
-    cells[seed].plane = i;
+    cells[seed].plane_id = i;
   }
 
   while (stack.size()) {
@@ -198,38 +200,39 @@ void init_labeling(vtkSmartPointer<vtkPolyData> polydata,
     // std::cout << cell_id << std::endl;
     stack.pop_front();
     for (auto j : G[cell_id]) {
-      if (cells[j].plane == -1) {
-        cells[j].plane = cells[cell_id].plane;
+      if (cells[j].plane_id == -1) {
+        cells[j].plane_id = cells[cell_id].plane_id;
         stack.push_back(j);
       }
     }
   }
 }
 
-double calc_manhathan_distance(std::array<double, 3> v0,
-                               std::array<double, 3> v1) {
+inline double calc_manhathan_distance(const std::array<double, 3> &v0,
+                                      const std::array<double, 3> &v1) {
   return std::fabs(v0[0] - v1[0]) + std::fabs(v0[1] - v1[1]) +
          std::fabs(v0[2] - v1[2]);
 }
 
-double calc_euclidean_distance(std::array<double, 3> &v0,
-                               std::array<double, 3> &v1) {
+inline double calc_euclidean_distance(const std::array<double, 3> &v0,
+                                      const std::array<double, 3> &v1) {
   return std::sqrt((v0[0] - v1[0]) * (v0[0] - v1[0]) +
                    (v0[1] - v1[1]) * (v0[1] - v1[1]) +
                    (v0[2] - v1[2]) * (v0[2] - v1[2]));
 }
 
-std::array<double, 3> arr_diff(std::array<double, 3> v0,
-                               std::array<double, 3> v1) {
+inline std::array<double, 3> arr_diff(const std::array<double, 3> &v0,
+                                      const std::array<double, 3> &v1) {
   return {(v0[0] - v1[0]), (v0[1] - v1[1]), (v0[2] - v1[2])};
 }
 
-double dot(std::array<double, 3> v0, std::array<double, 3> v1) {
+inline double dot(const std::array<double, 3> &v0, const std::array<double, 3> &v1) {
   return (v0[0] * v1[0]) + (v0[1] * v1[1]) + (v0[2] * v1[2]);
 }
 
-double calc_energy(G_type &G, std::vector<Cell> &cells,
-                   std::vector<Plane> &planes, std::vector<int> plane_ids) {
+double calc_energy(const G_type &G, const std::vector<Cell> &cells,
+                   const std::vector<Plane> &planes,
+                   std::vector<int> plane_ids) {
   double energy = 0.0;
   double dp = 0.0;
   double vpq = 0.0;
@@ -237,20 +240,15 @@ double calc_energy(G_type &G, std::vector<Cell> &cells,
     auto &plane = planes[plane_id];
     for (auto cell_id : plane.cells) {
       auto &cell = cells[cell_id];
-      dp +=
-          (cell.area * (calc_euclidean_distance(plane.normals, cell.normals) +
-                        WN * std::fabs(dot(arr_diff(cell.center, plane.center),
-                                           plane.normals))));
+      dp += (cell.area * (1.0 - dot(plane.normals, cell.normals) + WN * std::fabs(dot(arr_diff(cell.center, plane.center), plane.normals))));
       for (auto j : G[cell_id]) {
         auto &cell_neighbour = cells[j];
-        if (cell.plane == cell_neighbour.plane) {
+        if (cell.plane_id == cell_neighbour.plane_id) {
           vpq += 0;
         } else {
           for (auto p : plane_ids) {
-            if (cell_neighbour.plane == p) {
-              vpq += (((cell.area + cell_neighbour.area) / 2.0) *
-                      (4 - calc_euclidean_distance(cell.normals,
-                                                   cell_neighbour.normals)));
+            if (cell_neighbour.plane_id == p) {
+              vpq += (((cell.area + cell_neighbour.area) / 2.0) * (4.0 - 1.0 - dot(cell.normals, cell_neighbour.normals)));
               break;
             }
           }
@@ -273,17 +271,17 @@ int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
   }
 
   for (auto &cell : cells) {
-    planes[cell.plane].area += cell.area;
+    planes[cell.plane_id].area += cell.area;
 
-    planes[cell.plane].center[0] += (cell.center[0] * cell.area);
-    planes[cell.plane].center[1] += (cell.center[1] * cell.area);
-    planes[cell.plane].center[2] += (cell.center[2] * cell.area);
+    planes[cell.plane_id].center[0] += (cell.center[0] * cell.area);
+    planes[cell.plane_id].center[1] += (cell.center[1] * cell.area);
+    planes[cell.plane_id].center[2] += (cell.center[2] * cell.area);
 
-    planes[cell.plane].normals[0] += (cell.normals[0] * cell.area);
-    planes[cell.plane].normals[1] += (cell.normals[1] * cell.area);
-    planes[cell.plane].normals[2] += (cell.normals[2] * cell.area);
+    planes[cell.plane_id].normals[0] += (cell.normals[0] * cell.area);
+    planes[cell.plane_id].normals[1] += (cell.normals[1] * cell.area);
+    planes[cell.plane_id].normals[2] += (cell.normals[2] * cell.area);
 
-    planes[cell.plane].cells.push_back(cell.id);
+    planes[cell.plane_id].cells.push_back(cell.id);
   }
 
   for (auto &plane : planes) {
@@ -315,7 +313,7 @@ int update_planes(std::vector<Plane> &planes, std::vector<Cell> &cells) {
   return updated;
 }
 
-void swap_optimize(G_type &G, std::vector<Cell> &cells,
+void swap_optimize(const G_type &G, std::vector<Cell> &cells,
                    std::vector<Plane> &planes) {
   double energy, new_energy;
   int modified = 0;
@@ -339,10 +337,10 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells,
             auto &cell = cells[cell_id];
             for (auto j : G[cell_id]) {
               auto &cell_neighbour = cells[j];
-              if (cell_neighbour.plane == p1) {
+              if (cell_neighbour.plane_id == p1) {
                 planes[p1].cells.remove(j);
                 planes[p0].cells.push_back(j);
-                cell_neighbour.plane = p0;
+                cell_neighbour.plane_id = p0;
                 new_energy = calc_energy(G, cells, planes, {p0, p1});
                 if (new_energy < energy) {
                   energy = new_energy;
@@ -350,7 +348,7 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells,
                 } else {
                   planes[p1].cells.push_back(j);
                   planes[p0].cells.pop_back();
-                  cell_neighbour.plane = p1;
+                  cell_neighbour.plane_id = p1;
                 }
               }
             }
@@ -366,7 +364,7 @@ void swap_optimize(G_type &G, std::vector<Cell> &cells,
 }
 
 vtkSmartPointer<vtkPolyData>
-gen_output_polydata(vtkSmartPointer<vtkPolyData> polydata,
+gen_output_polydata(const vtkSmartPointer<vtkPolyData> polydata,
                     std::vector<Cell> cells) {
   auto output_polydata = vtkSmartPointer<vtkPolyData>::New();
   output_polydata->DeepCopy(polydata);
@@ -380,8 +378,8 @@ gen_output_polydata(vtkSmartPointer<vtkPolyData> polydata,
   color_array2->SetNumberOfValues(polydata->GetNumberOfCells());
 
   for (auto &cell : cells) {
-    color_array1->SetValue(cell.id, cell.plane);
-    color_array2->SetValue(cell.id, cell.plane);
+    color_array1->SetValue(cell.id, cell.plane_id);
+    color_array2->SetValue(cell.id, cell.plane_id);
   }
   output_polydata->GetCellData()->AddArray(color_array1);
   output_polydata->GetCellData()->AddArray(color_array2);
@@ -396,7 +394,7 @@ void update_polydata(vtkSmartPointer<vtkPolyData> polydata,
   std::cout << "Size regionid2  " << color_array2->GetNumberOfValues()
             << std::endl;
   for (auto &cell : cells) {
-    color_array2->SetValue(cell.id, cell.plane);
+    color_array2->SetValue(cell.id, cell.plane_id);
   }
 }
 
