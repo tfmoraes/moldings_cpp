@@ -1,11 +1,15 @@
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <deque>
+#include <execution>
 #include <iostream>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <random>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 #include <vtkAbstractPolyDataReader.h>
@@ -226,7 +230,8 @@ inline std::array<double, 3> arr_diff(const std::array<double, 3> &v0,
   return {(v0[0] - v1[0]), (v0[1] - v1[1]), (v0[2] - v1[2])};
 }
 
-inline double dot(const std::array<double, 3> &v0, const std::array<double, 3> &v1) {
+inline double dot(const std::array<double, 3> &v0,
+                  const std::array<double, 3> &v1) {
   return (v0[0] * v1[0]) + (v0[1] * v1[1]) + (v0[2] * v1[2]);
 }
 
@@ -236,26 +241,50 @@ double calc_energy(const G_type &G, const std::vector<Cell> &cells,
   double energy = 0.0;
   double dp = 0.0;
   double vpq = 0.0;
-  for (auto plane_id : plane_ids) {
-    auto &plane = planes[plane_id];
+  std::mutex mtx_dp;
+  std::mutex mtx_vpq;
+  auto lambda_func = [&](size_t plane_id) {
+    std::thread::id this_id = std::this_thread::get_id();
+    // std::cout << this_id << " " << plane_id << std::endl;
+    double local_dp = 0.0;
+    double local_vpq = 0.0;
+    auto &plane = planes[plane_ids[plane_id]];
     for (auto cell_id : plane.cells) {
       auto &cell = cells[cell_id];
-      dp += (cell.area * (1.0 - dot(plane.normals, cell.normals) + WN * std::fabs(dot(arr_diff(cell.center, plane.center), plane.normals))));
+      auto value =
+          cell.area * (1.0 - dot(plane.normals, cell.normals) +
+                       WN * std::fabs(dot(arr_diff(cell.center, plane.center),
+                                          plane.normals)));
+      local_dp += value;
       for (auto j : G[cell_id]) {
         auto &cell_neighbour = cells[j];
         if (cell.plane_id == cell_neighbour.plane_id) {
-          vpq += 0;
         } else {
           for (auto p : plane_ids) {
             if (cell_neighbour.plane_id == p) {
-              vpq += (((cell.area + cell_neighbour.area) / 2.0) * (4.0 - 1.0 - dot(cell.normals, cell_neighbour.normals)));
+              auto v =
+                  (((cell.area + cell_neighbour.area) / 2.0) *
+                   (4.0 - 1.0 - dot(cell.normals, cell_neighbour.normals)));
+              local_vpq += v;
               break;
             }
           }
         }
       }
     }
-  }
+    mtx_dp.lock();
+    dp += local_dp;
+    mtx_dp.unlock();
+    mtx_vpq.lock();
+    vpq += local_vpq;
+    mtx_vpq.unlock();
+  };
+  std::thread t0(lambda_func, 0);
+  std::thread t1(lambda_func, 1);
+
+  t0.join();
+  t1.join();
+
   energy = dp + WV * vpq;
   return energy;
 }
